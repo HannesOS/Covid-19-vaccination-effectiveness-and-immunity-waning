@@ -40,19 +40,20 @@ N = np.sum(init, axis=0)
 ####################################### FIGURE 1 ###############################################
 def figure1():
     coverage = get_vaccination_coverage_of_age_group()
-    R0s = [1.5, 2.5, 3.5, 4.5, 5.5]
+    R0s = [2.5, 3.0, 3.2, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0]
     NPIs = [False, True]
     for R0 in R0s:
         for NPI in NPIs:
             Rt_plots(R0, alpha_A, alpha_S, contact_matrix, N, epsilon, p, r_a, r_s, NPI=NPI)
 ################################################################################################
 
+
 def model(t, x, params, contact_matrix):
     (beta, epsilon, r_s, r_a, theta_NIL, theta_1Y, theta_3Y, p, rho_NIL, rho_1Y, rho_3Y,
             pi_NIL, pi_1Y, pi_3Y, tau_NIL, tau_1Y, tau_3Y, omega_NIL, omega_1Y, omega_3Y,
             mu_NIL, mu_1Y, mu_3Y, alpha_S, alpha_A, ypsilon, e, f, li_and_ti_NIL, li_and_ti_1Y, li_and_ti_3Y,
             gamma_NIL, gamma_1Y, gamma_3Y, gamma_v_NIL, gamma_v_1Y, gamma_v_3Y, NPI_CONTACTS_REDUCTION) = params
-
+    
 
     S, E, IA, IS, H, ICU, M, R, S_v, E_v, IA_v, IS_v, H_v, ICU_v, M_v, R_v = x
     lambda_ = all_lambdas(beta, alpha_S, contact_matrix, IS, IS_v, N, alpha_A, IA, IA_v)
@@ -79,12 +80,11 @@ def model(t, x, params, contact_matrix):
     return np.array([dS_dt, dE_dt, dIA_dt, dIS_dt, dH_dt, dICU_dt, dM_dt, dR_dt,
                      dS_v_dt, dE_v_dt, dIA_v_dt, dIS_v_dt, dH_v_dt, dICU_v_dt, dM_v_dt, dR_v_dt])
 
-def solve(x0, params, contact_matrix, vaccination_plan, NPI, waning, amount_of_classes = 16, amount_of_age_groups = 16, bounds=[0, 600], dt=0.01):
+def solve(x0, params, contact_matrix, vaccination_plan, NPI, waning, amount_of_classes = 16, amount_of_age_groups = 16, bounds=[0, 750], dt=0.01):
     (beta, epsilon, r_s, r_a, theta_NIL, theta_1Y, theta_3Y, p, rho_NIL, rho_1Y, rho_3Y,
             pi_NIL, pi_1Y, pi_3Y, tau_NIL, tau_1Y, tau_3Y, omega_NIL, omega_1Y, omega_3Y,
             mu_NIL, mu_1Y, mu_3Y, alpha_S, alpha_A, ypsilon, e, f, li_and_ti_NIL, li_and_ti_1Y, li_and_ti_3Y,
             gamma_NIL, gamma_1Y, gamma_3Y, gamma_v_NIL, gamma_v_1Y, gamma_v_3Y, NPI_CONTACTS_REDUCTION) = params
-
     ts = np.arange(bounds[0], bounds[1], dt)
     solved = np.zeros((amount_of_classes, amount_of_age_groups, ts.size))
     contact_reductions = get_contact_reductions(waning=waning)
@@ -102,7 +102,7 @@ def solve(x0, params, contact_matrix, vaccination_plan, NPI, waning, amount_of_c
             print(f'Solving t={t}...')
         y = solved[:, :, i-1]
         current_contacts = update_contact_matrix(t, contact_matrix, contact_reductions)
-        current_ypsilon = update_vaccination(t, current_ypsilon, vaccination_plan)        
+        current_ypsilon = update_vaccination(t, ypsilon, vaccination_plan)
         params = (beta, epsilon, r_s, r_a, theta_NIL, theta_1Y, theta_3Y, p, rho_NIL, rho_1Y, rho_3Y,
             pi_NIL, pi_1Y, pi_3Y, tau_NIL, tau_1Y, tau_3Y, omega_NIL, omega_1Y, omega_3Y,
             mu_NIL, mu_1Y, mu_3Y, alpha_S, alpha_A, current_ypsilon, e, f, li_and_ti_NIL, li_and_ti_1Y, li_and_ti_3Y,
@@ -115,15 +115,15 @@ def solve(x0, params, contact_matrix, vaccination_plan, NPI, waning, amount_of_c
 
     return ts, solved
 
-def update_contact_matrix(t, contact_matrix, contact_reductions, NPI=True):
+def update_contact_matrix(t, contact_matrix, contact_reductions, NPI=False, waning='NIL'):
     new_c = np.copy(contact_matrix)
     if NPI:
-        new_c = new_c * (1 - NPI_CONTACTS_REDUCTION)
+        new_c = new_c * (1-NPI_CONTACTS_REDUCTION)
 
     for reduction in contact_reductions:
         t_start, t_end, strength = reduction
         if t >= t_start and t < t_end:
-            new_c = new_c * (1 - strength)
+            new_c = new_c * (1-strength) * 0.97
             break
     return new_c
 
@@ -136,36 +136,42 @@ def update_vaccination(t, ypsilon, vaccination_plan):
                 new_yps[i] = 0
     return new_yps
 
+def figure2():
+    x0 = init
+    params = load_parameters() 
+    contact_matrix = load_contact_matrix()
+    NPI = False
+    wanings = ['1Y', '3Y', 'NIL']
+
+    max_x = 715
+    xticks = np.arange(10, max_x, 70)
+    print(xticks)
+    xlabels = ['feb 2021', 'april 2021', 'june 2021', 'aug 2021', 'oct 2021', 'dec 2021',
+            'feb 2022', 'april 2022', 'june 2022', 'aug 2022', 'oct 2022']
+    fig, ax = plt.subplots()
+    fig.set_dpi(180)
+    fig.set_size_inches(10,4)
+    colors = ['mediumblue', 'darkred', 'forestgreen']
+    for i, waning in enumerate(wanings):
+
+        ts, solved = solve(x0, params, contact_matrix, vaccination_plan=vaccination_plan, NPI=NPI, waning=waning, bounds=[0, max_x])
+
+        (S, E, IA, IS, H, ICU, M, R) = aggregate_vaccinated_and_unvaccinated(aggregate_compartments(solved))
+        ax.plot(ts, ICU, linewidth=1.6, color=colors[i])
+    ax.set_ylabel('Intensive care unit occupancy')
 
 
-x0 = init
-params = load_parameters() 
-contact_matrix = load_contact_matrix()
-NPI = False
-wanings = ['NIL']
+    ax.set_xticks(xticks)
+    ax.set_xlim(0,max_x)
+    ax.hlines(280, 0, max_x, linestyles='dashed', color='black')
+    ax.set_xticklabels(xlabels, fontsize=6)
+    ax.set_ylim(-100, 2420)
+
+    plt.legend(['1 year immunity', '3 year immunity', 'no immunity loss'], frameon=False)
+    plt.show()
 
 
-for waning in wanings:
-    ts, solved = solve(x0, params, contact_matrix, vaccination_plan=vaccination_plan, NPI=NPI, waning=waning)
 
-    (S, E, IA, IS, H, ICU, M, R) = aggregate_vaccinated_and_unvaccinated(aggregate_compartments(solved))
-    plt.plot(ts, H)
-plt.ylabel('Hospital occupancy')
-plt.legend(['1Y waning', '3Y waning', 'no immunity waning'])
-plt.show()
-
-#aggregate_vaccinated_and_unvaccinated((S, E, IA, IS, H, ICU, M, R, S_v, E_v, IA_v, IS_v, H_v, ICU_v, M_v, R_v)
-
-#(S, E, IA, IS, H, ICU, M, R, S_v, E_v, IA_v, IS_v, H_v, ICU_v, M_v, R_v) = aggregate_compartments(solved)
-
-
-#plt.plot(ts, S, label='S')
-#plt.show()
-#plt.plot(ts, IA, label='IA')
-#plt.plot(ts, IS, label='IS')
-#plt.show()
-#plt.plot(ts, M, label='M')
-#plt.plot(ts, R, label='R')
-#plt.show()
-#plt.legend()
-
+######################
+figure1()
+figure2()
